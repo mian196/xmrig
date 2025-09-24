@@ -26,13 +26,19 @@ jobs:
         
     - name: Download XMRig dependencies
       run: |
-        # Download the XMRig dependencies source
+        # Download the XMRig dependencies source (contains pre-built binaries)
         Invoke-WebRequest -Uri "https://github.com/xmrig/xmrig-deps/archive/refs/tags/v25.06.16.zip" -OutFile "xmrig-deps.zip"
         Expand-Archive -Path "xmrig-deps.zip" -DestinationPath "C:\"
         # Rename the extracted folder to match expected structure
         Rename-Item -Path "C:\xmrig-deps-25.06.16" -NewName "xmrig-deps"
-        # Verify the structure
-        Get-ChildItem -Path "C:\xmrig-deps" -Recurse -Directory | Select-Object FullName
+        # Verify the structure and show what's inside
+        Write-Host "Dependencies structure:"
+        Get-ChildItem -Path "C:\xmrig-deps" -Recurse | Select-Object FullName
+        # Check for WinRing0x64.sys and other important files
+        Write-Host "Looking for driver files:"
+        Get-ChildItem -Path "C:\xmrig-deps" -Recurse -Filter "*.sys" | Select-Object FullName
+        Write-Host "MSVC2022 x64 contents:"
+        Get-ChildItem -Path "C:\xmrig-deps\msvc2022\x64" -Recurse | Select-Object FullName
         
     - name: Build XMRig
       run: |
@@ -43,10 +49,27 @@ jobs:
         
     - name: List build output
       run: |
-        Get-ChildItem -Path "build" -Recurse -Filter "*.exe" | Select-Object FullName
+        Write-Host "Build output structure:"
+        Get-ChildItem -Path "build" -Recurse | Select-Object FullName
+        Write-Host "Looking for executables and drivers:"
+        Get-ChildItem -Path "build" -Recurse -Include "*.exe", "*.sys", "*.dll" | Select-Object FullName
+        
+    - name: Copy WinRing0 driver to build output
+      run: |
+        # Copy the WinRing0x64.sys driver to the build output directory
+        $driverSource = Get-ChildItem -Path "C:\xmrig-deps" -Recurse -Filter "WinRing0x64.sys" | Select-Object -First 1
+        if ($driverSource) {
+            Write-Host "Found WinRing0x64.sys at: $($driverSource.FullName)"
+            Copy-Item -Path $driverSource.FullName -Destination "build\Release\" -Force
+            Write-Host "Copied WinRing0x64.sys to build output"
+        } else {
+            Write-Host "WinRing0x64.sys not found in dependencies"
+        }
         
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: xmrig-win-x64
-        path: build/Release/xmrig.exe
+        path: |
+          build/Release/xmrig.exe
+          build/Release/WinRing0x64.sys
