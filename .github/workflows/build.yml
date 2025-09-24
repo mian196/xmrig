@@ -26,9 +26,11 @@ jobs:
         
     - name: Download XMRig dependencies
       run: |
-        # Download the official XMRig dependencies
-        Invoke-WebRequest -Uri "https://github.com/xmrig/xmrig-deps/releases/latest/download/xmrig-deps-msvc2022.zip" -OutFile "xmrig-deps.zip"
+        # Download the XMRig dependencies source
+        Invoke-WebRequest -Uri "https://github.com/xmrig/xmrig-deps/archive/refs/tags/v25.06.16.zip" -OutFile "xmrig-deps.zip"
         Expand-Archive -Path "xmrig-deps.zip" -DestinationPath "C:\"
+        # Rename the extracted folder to match expected structure
+        Rename-Item -Path "C:\xmrig-deps-25.06.16" -NewName "xmrig-deps"
         # Verify the structure
         Get-ChildItem -Path "C:\xmrig-deps" -Recurse -Directory | Select-Object FullName
         
