@@ -24,13 +24,8 @@ jobs:
       run: |
         choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
         
-    - name: Clone XMRig
-      run: |
-        git clone https://github.com/xmrig/xmrig.git
-        
     - name: Build XMRig
       run: |
-        cd xmrig
         mkdir build
         cd build
         cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
@@ -40,4 +35,4 @@ jobs:
       uses: actions/upload-artifact@v4  # Updated to latest version
       with:
         name: xmrig-win
-        path: xmrig/build/Release/xmrig.exe
+        path: build/Release/xmrig.exe
