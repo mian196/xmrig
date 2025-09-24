@@ -1,0 +1,39 @@
+name: Build XMRig for Windows
+
+on:
+  push:
+    branches:
+      - main  # Trigger the build when you push to the 'main' branch
+  pull_request:
+    branches:
+      - main  # Trigger the build on PR creation
+
+jobs:
+  build:
+    runs-on: windows-latest  # Use a Windows runner
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2  # Checkout the repository so we can build it
+
+    - name: Set up Visual Studio
+      uses: microsoft/setup-msbuild@v1  # Sets up MSBuild for building C++ projects
+      with:
+        vs-version: 2019  # Use Visual Studio 2019
+
+    - name: Install dependencies
+      run: |
+        choco install cmake git  # Install CMake and Git using Chocolatey (Windows package manager)
+
+    - name: Build XMRig
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 16 2019" -DCMAKE_BUILD_TYPE=Release  # Generate Visual Studio project files
+        cmake --build . --config Release  # Build the project in Release mode
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v2  # Upload the built file as an artifact
+      with:
+        name: xmrig-win
+        path: build/xmrig/bin/Release/xmrig.exe  # Path to the built Windows binary
