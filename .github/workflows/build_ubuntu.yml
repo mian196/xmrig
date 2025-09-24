@@ -109,7 +109,11 @@ jobs:
         # Clone CUDA plugin repository
         git clone https://github.com/xmrig/xmrig-cuda.git
         mkdir xmrig-cuda/build && cd xmrig-cuda/build
-        cmake .. -DCUDA_LIB=/usr/local/cuda/lib64/stubs/libcuda.so -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
+        cmake .. \
+          -DCUDA_LIB=/usr/local/cuda/lib64/stubs/libcuda.so \
+          -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
+          -DCMAKE_CUDA_FLAGS="--diag-suppress 186" \
+          -Wno-dev
         make -j$(nproc)
         
     - name: Build main XMRig with advanced dependencies
