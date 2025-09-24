@@ -1,0 +1,133 @@
+name: Build XMRig Static Linux Binary
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-20.04  # Use older Ubuntu for better compatibility
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          libuv1-dev \
+          libssl-dev \
+          libhwloc-dev \
+          pkg-config \
+          gcc-9 \
+          g++-9
+        # Use GCC 9 for better compatibility
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+        
+    - name: Download static libraries for musl build
+      run: |
+        # Create a directory for static dependencies
+        mkdir -p /tmp/static-deps
+        cd /tmp/static-deps
+        
+        # Download and build static musl libc for maximum compatibility
+        wget https://musl.libc.org/releases/musl-1.2.4.tar.gz
+        tar -xzf musl-1.2.4.tar.gz
+        cd musl-1.2.4
+        ./configure --prefix=/tmp/musl-install --enable-static --disable-shared
+        make -j$(nproc)
+        make install
+        
+    - name: Build static OpenSSL
+      run: |
+        cd /tmp/static-deps
+        wget https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz
+        tar -xzf openssl-3.0.16.tar.gz
+        cd openssl-3.0.16
+        ./Configure linux-x86_64 no-shared no-dso --prefix=/tmp/openssl-static
+        make -j$(nproc)
+        make install_sw
+        
+    - name: Build static libuv
+      run: |
+        cd /tmp/static-deps
+        git clone https://github.com/libuv/libuv.git
+        cd libuv
+        git checkout v1.51.0
+        mkdir build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DBUILD_SHARED_LIBS=OFF \
+                 -DCMAKE_INSTALL_PREFIX=/tmp/libuv-static \
+                 -DCMAKE_C_FLAGS="-fPIC"
+        make -j$(nproc)
+        make install
+        
+    - name: Build static hwloc
+      run: |
+        cd /tmp/static-deps
+        wget https://download.open-mpi.org/release/hwloc/v2.12/hwloc-2.12.1.tar.gz
+        tar -xzf hwloc-2.12.1.tar.gz
+        cd hwloc-2.12.1
+        ./configure --prefix=/tmp/hwloc-static \
+                   --enable-static \
+                   --disable-shared \
+                   --disable-libudev \
+                   --disable-libxml2
+        make -j$(nproc)
+        make install
+        
+    - name: Build static XMRig
+      run: |
+        mkdir build
+        cd build
+        
+        # Configure with static libraries
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DWITH_TLS=ON \
+          -DWITH_HWLOC=ON \
+          -DBUILD_STATIC=ON \
+          -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+          -DCMAKE_C_FLAGS="-static -fPIC" \
+          -DCMAKE_CXX_FLAGS="-static -fPIC" \
+          -DUV_LIBRARY=/tmp/libuv-static/lib/libuv.a \
+          -DUV_INCLUDE_DIR=/tmp/libuv-static/include \
+          -DOPENSSL_ROOT_DIR=/tmp/openssl-static \
+          -DOPENSSL_USE_STATIC_LIBS=TRUE \
+          -DHWLOC_LIBRARY=/tmp/hwloc-static/lib/libhwloc.a \
+          -DHWLOC_INCLUDE_DIR=/tmp/hwloc-static/include
+          
+        make -j$(nproc)
+        
+    - name: Verify static binary
+      run: |
+        echo "Checking if binary is statically linked:"
+        file build/xmrig
+        echo "Dependencies (should be minimal for static binary):"
+        ldd build/xmrig || echo "Statically linked (no dynamic dependencies)"
+        echo "Binary size:"
+        ls -lh build/xmrig
+        echo "Testing binary:"
+        ./build/xmrig --help | head -20
+        
+    - name: Strip binary to reduce size
+      run: |
+        strip build/xmrig
+        echo "Stripped binary size:"
+        ls -lh build/xmrig
+        
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xmrig-linux-static
+        path: build/xmrig
