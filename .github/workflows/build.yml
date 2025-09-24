@@ -34,7 +34,7 @@ jobs:
         cmake --build . --config Release
 
     - name: Upload build artifact
-      uses: actions/upload-artifact@v3  # Updated to v3
+      uses: actions/upload-artifact@latest  # Use the latest stable version
       with:
         name: xmrig-win
         path: build/xmrig/bin/Release/xmrig.exe
