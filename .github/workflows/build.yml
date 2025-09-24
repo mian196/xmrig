@@ -24,13 +24,47 @@ jobs:
       run: |
         choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
         
+    - name: Get latest XMRig dependencies version
+      id: get-deps-version
+      run: |
+        # Get the latest release tag from xmrig-deps repository
+        $response = Invoke-RestMethod -Uri "https://api.github.com/repos/xmrig/xmrig-deps/releases/latest"
+        $latestTag = $response.tag_name
+        $zipballUrl = $response.zipball_url
+        Write-Host "Latest xmrig-deps version: $latestTag"
+        Write-Host "Download URL: $zipballUrl"
+        # Set output for next step
+        echo "version=$latestTag" >> $env:GITHUB_OUTPUT
+        echo "download-url=$zipballUrl" >> $env:GITHUB_OUTPUT
+        
     - name: Download XMRig dependencies
       run: |
-        # Download the XMRig dependencies source (contains pre-built binaries)
-        Invoke-WebRequest -Uri "https://github.com/xmrig/xmrig-deps/archive/refs/tags/v25.06.16.zip" -OutFile "xmrig-deps.zip"
+        # Download the latest XMRig dependencies using GitHub's zipball URL
+        $downloadUrl = "${{ steps.get-deps-version.outputs.download-url }}"
+        $version = "${{ steps.get-deps-version.outputs.version }}"
+        Write-Host "Downloading dependencies from: $downloadUrl"
+        Write-Host "Version: $version"
+        
+        Invoke-WebRequest -Uri $downloadUrl -OutFile "xmrig-deps.zip"
         Expand-Archive -Path "xmrig-deps.zip" -DestinationPath "C:\"
-        # Rename the extracted folder to match expected structure
-        Rename-Item -Path "C:\xmrig-deps-25.06.16" -NewName "xmrig-deps"
+        
+        # Find the extracted folder (GitHub zipball creates a folder like xmrig-xmrig-deps-abc1234)
+        $extractedFolder = Get-ChildItem -Path "C:\" -Directory -Filter "xmrig-xmrig-deps-*" | Select-Object -First 1
+        if ($extractedFolder) {
+            Write-Host "Found extracted folder: $($extractedFolder.Name)"
+            Rename-Item -Path $extractedFolder.FullName -NewName "xmrig-deps"
+            Write-Host "Renamed to: xmrig-deps"
+        } else {
+            Write-Host "Could not find extracted folder, listing C:\ contents:"
+            Get-ChildItem -Path "C:\" -Directory | Where-Object {$_.Name -like "*xmrig*" -or $_.Name -like "*deps*"} | Select-Object Name
+            # Fallback: try the old naming convention
+            $fallbackFolder = "C:\xmrig-deps-$($version.TrimStart('v'))"
+            if (Test-Path $fallbackFolder) {
+                Rename-Item -Path $fallbackFolder -NewName "xmrig-deps"
+            }
+        }
+        
+        Write-Host "Downloaded and extracted xmrig-deps version: $version"
         # Verify the structure and show what's inside
         Write-Host "Dependencies structure:"
         Get-ChildItem -Path "C:\xmrig-deps" -Recurse | Select-Object FullName
