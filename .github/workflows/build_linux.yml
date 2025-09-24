@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-20.04  # Use older Ubuntu for better compatibility
+    runs-on: ubuntu-latest  # Always use the latest Ubuntu
     
     steps:
     - name: Checkout repository
@@ -28,78 +28,74 @@ jobs:
           libssl-dev \
           libhwloc-dev \
           pkg-config \
-          gcc-9 \
-          g++-9
-        # Use GCC 9 for better compatibility
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
+          wget \
+          curl
+        # Use the latest GCC available
+        gcc --version
+        g++ --version
         
-    - name: Download static libraries for musl build
+    - name: Get latest dependency versions and build static libraries
       run: |
-        # Create a directory for static dependencies
+        # Create directory for static dependencies
         mkdir -p /tmp/static-deps
         cd /tmp/static-deps
         
-        # Download and build static musl libc for maximum compatibility
-        wget https://musl.libc.org/releases/musl-1.2.4.tar.gz
-        tar -xzf musl-1.2.4.tar.gz
-        cd musl-1.2.4
-        ./configure --prefix=/tmp/musl-install --enable-static --disable-shared
-        make -j$(nproc)
-        make install
-        
-    - name: Build static OpenSSL
-      run: |
-        cd /tmp/static-deps
-        wget https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz
-        tar -xzf openssl-3.0.16.tar.gz
-        cd openssl-3.0.16
-        ./Configure linux-x86_64 no-shared no-dso --prefix=/tmp/openssl-static
+        # Get latest OpenSSL 3.x
+        echo "Getting latest OpenSSL..."
+        OPENSSL_VERSION=$(curl -s https://api.github.com/repos/openssl/openssl/releases | jq -r '.[0].tag_name' | sed 's/openssl-//')
+        echo "Latest OpenSSL version: $OPENSSL_VERSION"
+        wget https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz
+        tar -xzf openssl-$OPENSSL_VERSION.tar.gz
+        cd openssl-$OPENSSL_VERSION
+        ./Configure linux-x86_64 no-shared no-dso --prefix=/tmp/openssl-static -O3 -march=native
         make -j$(nproc)
         make install_sw
+        cd ..
         
-    - name: Build static libuv
-      run: |
-        cd /tmp/static-deps
-        git clone https://github.com/libuv/libuv.git
+        # Get latest libuv
+        echo "Getting latest libuv..."
+        git clone --depth 1 --branch $(curl -s https://api.github.com/repos/libuv/libuv/releases/latest | jq -r '.tag_name') https://github.com/libuv/libuv.git
         cd libuv
-        git checkout v1.51.0
         mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release \
                  -DBUILD_SHARED_LIBS=OFF \
                  -DCMAKE_INSTALL_PREFIX=/tmp/libuv-static \
-                 -DCMAKE_C_FLAGS="-fPIC"
+                 -DCMAKE_C_FLAGS="-fPIC -O3 -march=native"
         make -j$(nproc)
         make install
+        cd ../..
         
-    - name: Build static hwloc
-      run: |
-        cd /tmp/static-deps
-        wget https://download.open-mpi.org/release/hwloc/v2.12/hwloc-2.12.1.tar.gz
-        tar -xzf hwloc-2.12.1.tar.gz
-        cd hwloc-2.12.1
+        # Get latest hwloc
+        echo "Getting latest hwloc..."
+        HWLOC_VERSION=$(curl -s https://api.github.com/repos/open-mpi/hwloc/releases/latest | jq -r '.tag_name' | sed 's/hwloc-//')
+        echo "Latest hwloc version: $HWLOC_VERSION"
+        wget https://download.open-mpi.org/release/hwloc/v$(echo $HWLOC_VERSION | cut -d. -f1-2)/hwloc-$HWLOC_VERSION.tar.gz
+        tar -xzf hwloc-$HWLOC_VERSION.tar.gz
+        cd hwloc-$HWLOC_VERSION
         ./configure --prefix=/tmp/hwloc-static \
                    --enable-static \
                    --disable-shared \
                    --disable-libudev \
-                   --disable-libxml2
+                   --disable-libxml2 \
+                   CFLAGS="-O3 -march=native"
         make -j$(nproc)
         make install
         
-    - name: Build static XMRig
+    - name: Build optimized static XMRig
       run: |
         mkdir build
         cd build
         
-        # Configure with static libraries
+        # Configure with latest static libraries and aggressive optimizations
         cmake .. \
           -DCMAKE_BUILD_TYPE=Release \
           -DWITH_TLS=ON \
           -DWITH_HWLOC=ON \
+          -DWITH_ASM=ON \
           -DBUILD_STATIC=ON \
           -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
-          -DCMAKE_C_FLAGS="-static -fPIC" \
-          -DCMAKE_CXX_FLAGS="-static -fPIC" \
+          -DCMAKE_C_FLAGS="-static -fPIC -O3 -march=native -mtune=native -flto" \
+          -DCMAKE_CXX_FLAGS="-static -fPIC -O3 -march=native -mtune=native -flto" \
           -DUV_LIBRARY=/tmp/libuv-static/lib/libuv.a \
           -DUV_INCLUDE_DIR=/tmp/libuv-static/include \
           -DOPENSSL_ROOT_DIR=/tmp/openssl-static \
