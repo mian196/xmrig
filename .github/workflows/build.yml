@@ -12,29 +12,32 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-
+    
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
-
+      uses: actions/checkout@v4  # Updated to latest version
+      
     - name: Set up Visual Studio
-      uses: microsoft/setup-msbuild@v1
-      with:
-        vs-version: 2019
-
+      uses: microsoft/setup-msbuild@v2  # Updated to v2
+      
     - name: Install dependencies
       run: |
-        choco install cmake git
-
+        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        
+    - name: Clone XMRig
+      run: |
+        git clone https://github.com/xmrig/xmrig.git
+        
     - name: Build XMRig
       run: |
+        cd xmrig
         mkdir build
         cd build
-        cmake .. -G "Visual Studio 16 2019" -DCMAKE_BUILD_TYPE=Release
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
-
+        
     - name: Upload build artifact
-      uses: actions/upload-artifact@latest  # Use the latest stable version
+      uses: actions/upload-artifact@v4  # Updated to latest version
       with:
         name: xmrig-win
-        path: build/xmrig/bin/Release/xmrig.exe
+        path: xmrig/build/Release/xmrig.exe
