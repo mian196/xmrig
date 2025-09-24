@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main  # Trigger the build on PR creation
+  workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
 
 jobs:
   build:
