@@ -1,0 +1,154 @@
+name: Build XMRig for Ubuntu
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  ubuntu-basic-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ubuntu_version: [20.04, 22.04, 24.04]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install basic build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev
+        
+    - name: Basic build
+      run: |
+        mkdir build && cd build
+        cmake ..
+        make -j$(nproc)
+        
+    - name: Verify build
+      run: |
+        echo "Binary info:"
+        file build/xmrig
+        echo "Dependencies:"
+        ldd build/xmrig
+        echo "Testing binary:"
+        ./build/xmrig --help | head -10
+        
+    - name: Upload basic build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xmrig-ubuntu-${{ matrix.ubuntu_version }}-basic
+        path: build/xmrig
+
+  ubuntu-advanced-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install advanced build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git build-essential cmake automake libtool autoconf
+        
+    - name: Build static dependencies using build_deps.sh
+      run: |
+        cd scripts
+        # Make build_deps.sh executable and run it
+        chmod +x build_deps.sh
+        ./build_deps.sh
+        echo "Dependencies built successfully!"
+        
+    - name: Advanced build with static dependencies
+      run: |
+        mkdir build && cd build
+        cmake .. -DXMRIG_DEPS=scripts/deps
+        make -j$(nproc)
+        
+    - name: Verify advanced build
+      run: |
+        echo "Advanced build binary info:"
+        file build/xmrig
+        echo "Dependencies (should be minimal due to static linking):"
+        ldd build/xmrig
+        echo "Binary size:"
+        ls -lh build/xmrig
+        echo "Testing binary:"
+        ./build/xmrig --help | head -10
+        
+    - name: Upload advanced build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xmrig-ubuntu-advanced-static
+        path: build/xmrig
+
+  ubuntu-cuda-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install CUDA and dependencies
+      run: |
+        # Install CUDA toolkit
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt update
+        sudo apt install -y cuda-toolkit-12-6 git build-essential cmake
+        
+    - name: Build CUDA plugin
+      run: |
+        # Clone CUDA plugin repository
+        git clone https://github.com/xmrig/xmrig-cuda.git
+        mkdir xmrig-cuda/build && cd xmrig-cuda/build
+        cmake .. -DCUDA_LIB=/usr/local/cuda/lib64/stubs/libcuda.so -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda
+        make -j$(nproc)
+        
+    - name: Build main XMRig with advanced dependencies
+      run: |
+        # Install main build dependencies
+        sudo apt install -y automake libtool autoconf
+        # Build static dependencies
+        cd scripts
+        chmod +x build_deps.sh
+        ./build_deps.sh
+        cd ../
+        # Build main XMRig
+        mkdir build && cd build
+        cmake .. -DXMRIG_DEPS=scripts/deps
+        make -j$(nproc)
+        
+    - name: Combine CUDA plugin with main binary
+      run: |
+        # Copy CUDA plugin to build directory
+        cp xmrig-cuda/build/libxmrig-cuda.so build/
+        echo "CUDA build completed!"
+        
+    - name: Verify CUDA build
+      run: |
+        echo "Main binary info:"
+        file build/xmrig
+        echo "CUDA plugin info:"
+        file build/libxmrig-cuda.so
+        echo "Main binary dependencies:"
+        ldd build/xmrig
+        echo "CUDA plugin dependencies:"
+        ldd build/libxmrig-cuda.so
+        echo "Testing main binary:"
+        ./build/xmrig --help | head -10
+        
+    - name: Upload CUDA build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: xmrig-ubuntu-cuda
+        path: |
+          build/xmrig
+          build/libxmrig-cuda.so
