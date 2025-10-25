@@ -1,0 +1,133 @@
+name: Build XMRig Static Linux Binary
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install build dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          libuv1-dev \
+          libssl-dev \
+          libhwloc-dev \
+          pkg-config \
+          wget \
+          curl \
+          jq \
+          ca-certificates
+        # Use the latest GCC available in Debian Trixie
+        gcc --version
+        g++ --version
+        
+    - name: Get latest dependency versions and build static libraries
+      run: |
+        # Create directory for static dependencies
+        mkdir -p /tmp/static-deps
+        cd /tmp/static-deps
+        
+        # Get latest OpenSSL 3.x
+        echo "Getting latest OpenSSL..."
+        OPENSSL_VERSION=$(curl -s https://api.github.com/repos/openssl/openssl/releases | jq -r '.[0].tag_name' | sed 's/openssl-//')
+        echo "Latest OpenSSL version: $OPENSSL_VERSION"
+        wget https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz
+        tar -xzf openssl-$OPENSSL_VERSION.tar.gz
+        cd openssl-$OPENSSL_VERSION
+        ./Configure linux-x86_64 no-shared no-dso --prefix=/tmp/openssl-static -O3 -march=native
+        make -j$(nproc)
+        make install_sw
+        cd ..
+        
+        # Get latest libuv
+        echo "Getting latest libuv..."
+        git clone --depth 1 --branch $(curl -s https://api.github.com/repos/libuv/libuv/releases/latest | jq -r '.tag_name') https://github.com/libuv/libuv.git
+        cd libuv
+        mkdir build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release \
+                 -DBUILD_SHARED_LIBS=OFF \
+                 -DCMAKE_INSTALL_PREFIX=/tmp/libuv-static \
+                 -DCMAKE_C_FLAGS="-fPIC -O3 -march=native"
+        make -j$(nproc)
+        make install
+        cd ../..
+        
+        # Get latest hwloc
+        echo "Getting latest hwloc..."
+        HWLOC_VERSION=$(curl -s https://api.github.com/repos/open-mpi/hwloc/releases/latest | jq -r '.tag_name' | sed 's/hwloc-//')
+        echo "Latest hwloc version: $HWLOC_VERSION"
+        wget https://download.open-mpi.org/release/hwloc/v$(echo $HWLOC_VERSION | cut -d. -f1-2)/hwloc-$HWLOC_VERSION.tar.gz
+        tar -xzf hwloc-$HWLOC_VERSION.tar.gz
+        cd hwloc-$HWLOC_VERSION
+        ./configure --prefix=/tmp/hwloc-static \
+                   --enable-static \
+                   --disable-shared \
+                   --disable-libudev \
+                   --disable-libxml2 \
+                   CFLAGS="-O3 -march=native"
+        make -j$(nproc)
+        make install
+        
+    - name: Build optimized static XMRig
+      run: |
+        mkdir build
+        cd build
+        
+        # Configure with latest static libraries and aggressive optimizations
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DWITH_TLS=ON \
+          -DWITH_HWLOC=ON \
+          -DWITH_ASM=ON \
+          -DBUILD_STATIC=ON \
+          -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+          -DCMAKE_C_FLAGS="-static -fPIC -O3 -march=native -mtune=native -flto" \
+          -DCMAKE_CXX_FLAGS="-static -fPIC -O3 -march=native -mtune=native -flto" \
+          -DUV_LIBRARY=/tmp/libuv-static/lib/libuv.a \
+          -DUV_INCLUDE_DIR=/tmp/libuv-static/include \
+          -DOPENSSL_ROOT_DIR=/tmp/openssl-static \
+          -DOPENSSL_USE_STATIC_LIBS=TRUE \
+          -DHWLOC_LIBRARY=/tmp/hwloc-static/lib/libhwloc.a \
+          -DHWLOC_INCLUDE_DIR=/tmp/hwloc-static/include
+          
+        make -j$(nproc)
+        
+    - name: Verify static binary
+      run: |
+        echo "Checking if binary is statically linked:"
+        file build/xmrig
+        echo "Dependencies (should be minimal for static binary):"
+        ldd build/xmrig || echo "Statically linked (no dynamic dependencies)"
+        echo "Binary size:"
+        ls -lh build/xmrig
+        echo "Testing binary:"
+        ./build/xmrig --help | head -20
+        
+    - name: Strip binary to reduce size
+      run: |
+        strip build/xmrig
+        echo "Stripped binary size:"
+        ls -lh build/xmrig
+        
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: xmrig-linux-debian-trixie-static
+        path: build/xmrig
