@@ -1,5 +1,4 @@
 name: Build XMRig Debian Linux Binary
-
 on:
   push:
     branches:
@@ -30,6 +29,7 @@ jobs:
           libssl-dev \
           libhwloc-dev \
           zlib1g-dev \
+          libzstd-dev \
           pkg-config \
           wget \
           curl \
@@ -55,6 +55,17 @@ jobs:
         CFLAGS="-fPIC -O3 -march=native" ./configure --prefix=/tmp/zlib-static --static
         make -j$(nproc)
         make install
+        cd ..
+        
+        # Get latest zstd
+        echo "Getting latest zstd..."
+        ZSTD_VERSION=$(curl -s https://api.github.com/repos/facebook/zstd/releases/latest | jq -r '.tag_name' | sed 's/v//')
+        echo "Latest zstd version: $ZSTD_VERSION"
+        wget https://github.com/facebook/zstd/releases/download/v$ZSTD_VERSION/zstd-$ZSTD_VERSION.tar.gz
+        tar -xzf zstd-$ZSTD_VERSION.tar.gz
+        cd zstd-$ZSTD_VERSION
+        make -j$(nproc) CFLAGS="-fPIC -O3 -march=native" lib-release
+        make PREFIX=/tmp/zstd-static install
         cd ..
         
         # Get latest OpenSSL 3.x
@@ -120,7 +131,9 @@ jobs:
           -DHWLOC_LIBRARY=/tmp/hwloc-static/lib/libhwloc.a \
           -DHWLOC_INCLUDE_DIR=/tmp/hwloc-static/include \
           -DZLIB_LIBRARY=/tmp/zlib-static/lib/libz.a \
-          -DZLIB_INCLUDE_DIR=/tmp/zlib-static/include
+          -DZLIB_INCLUDE_DIR=/tmp/zlib-static/include \
+          -Dzstd_LIBRARY=/tmp/zstd-static/lib/libzstd.a \
+          -Dzstd_INCLUDE_DIR=/tmp/zstd-static/include
           
         make -j$(nproc)
         
