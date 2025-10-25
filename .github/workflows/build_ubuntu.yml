@@ -1,4 +1,4 @@
-name: Build XMRig Static Linux Binary
+name: Build XMRig Ubuntu Linux Binary
 
 on:
   push:
