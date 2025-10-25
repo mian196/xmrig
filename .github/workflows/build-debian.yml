@@ -1,4 +1,4 @@
-name: Build XMRig Debian Linux Binary
+name: Build XMRig Static Linux Binary
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
           libuv1-dev \
           libssl-dev \
           libhwloc-dev \
+          zlib1g-dev \
           pkg-config \
           wget \
           curl \
@@ -43,6 +44,18 @@ jobs:
         # Create directory for static dependencies
         mkdir -p /tmp/static-deps
         cd /tmp/static-deps
+        
+        # Get latest zlib
+        echo "Getting latest zlib..."
+        ZLIB_VERSION=$(curl -s https://api.github.com/repos/madler/zlib/releases/latest | jq -r '.tag_name' | sed 's/v//')
+        echo "Latest zlib version: $ZLIB_VERSION"
+        wget https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz
+        tar -xzf zlib-$ZLIB_VERSION.tar.gz
+        cd zlib-$ZLIB_VERSION
+        CFLAGS="-fPIC -O3 -march=native" ./configure --prefix=/tmp/zlib-static --static
+        make -j$(nproc)
+        make install
+        cd ..
         
         # Get latest OpenSSL 3.x
         echo "Getting latest OpenSSL..."
@@ -105,7 +118,9 @@ jobs:
           -DOPENSSL_ROOT_DIR=/tmp/openssl-static \
           -DOPENSSL_USE_STATIC_LIBS=TRUE \
           -DHWLOC_LIBRARY=/tmp/hwloc-static/lib/libhwloc.a \
-          -DHWLOC_INCLUDE_DIR=/tmp/hwloc-static/include
+          -DHWLOC_INCLUDE_DIR=/tmp/hwloc-static/include \
+          -DZLIB_LIBRARY=/tmp/zlib-static/lib/libz.a \
+          -DZLIB_INCLUDE_DIR=/tmp/zlib-static/include
           
         make -j$(nproc)
         
