@@ -1,5 +1,4 @@
 name: Build XMRig Ubuntu Linux Binary
-
 on:
   push:
     branches:
@@ -8,7 +7,6 @@ on:
     branches:
       - main
   workflow_dispatch:  # Allow manual trigger
-
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -68,6 +66,12 @@ jobs:
       run: |
         strip xmrig/build/xmrig
         echo "Stripped binary size:"
+        ls -lh xmrig/build/xmrig
+        
+    - name: Set executable permissions
+      run: |
+        chmod +x xmrig/build/xmrig
+        echo "Permissions set:"
         ls -lh xmrig/build/xmrig
         
     - name: Upload build artifact
